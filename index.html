@@ -1,0 +1,268 @@
+#Load pkgs
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(devtools)
+library(easyGgplot2)
+library(Hmisc)
+install.packages("devtools")
+install_github("easyGgplot2", "kassambara")
+
+#import data
+mwm_data <- read.csv("mwm test.csv", stringsAsFactors = FALSE)
+
+#inspect data
+glimpse(mwm_data)
+
+#determine how many training days and number of observations per day. 
+summary(factor(mwm_data$train_day))
+
+#make sure the vars with numbers are either integers(int) or numbers(num) if not convert
+mwm_data$train_thig <-as.integer(mwm_data$train_thig)
+
+#check your changes 
+class(mwm_data$train_thig)
+
+#look at order of trials 
+head(mwm_data)
+
+#_________________________________________________
+#isolate training data columns 1-10
+train_data_only <- mwm_data[,1:10]
+glimpse(train_data_only)
+
+#________________________________________________
+#Sort using base R according to day/geno/id/trail
+attach(train_data_only)
+sort_by_day <- train_data_only[order(train_day, `train_.geno`, train_mouse_id, train_trial),] 
+View(sort_by_day)
+
+#Export Sort_by_day
+write.csv(sort_by_day,file="sort_by_day.csv")
+
+#________________________________________________
+#OR - Using Dplyr group by Day and arrange by geno/track/mouse_id
+sort_by_day2 <- train_data_only%>%
+                group_by(train_day)%>%
+                arrange(`train_.geno`,train_track, train_mouse_id)
+
+#Export Sort_by_day
+write.csv(sort_by_day2,file="sort_by_day2.csv")
+
+#________________________________________________
+#Calculate the mean/sd/sem of each genotype per day
+
+summary_train <- sort_by_day2%>%
+                  na.omit()%>%
+                  group_by(train_day, train_.geno)%>%
+                            summarise(Dur_mean = mean(train_duration), 
+                                      Dur_sd = sd(train_duration), 
+                                      Dur_sem = sd(train_duration)/sqrt(length(train_duration)),
+                                      Vel_mean = mean(train_velocity), 
+                                      Vel_sd = sd(train_velocity), 
+                                      Vel_sem = sd(train_velocity)/sqrt(length(train_velocity)),
+                                      Dist_mean = mean(train_dist_moved), 
+                                      Dist_sd = sd(train_dist_moved), 
+                                      Dist_sem = sd(train_dist_moved)/sqrt(length(train_dist_moved)),
+                                      Freq_mean = mean(train_freq), 
+                                      Freq_sd = sd(train_freq), 
+                                      Freq_sem = sd(train_freq)/sqrt(length(train_freq)),
+                                      Thig_mean = mean(train_thig), 
+                                      Thig_sd = sd(train_thig), 
+                                      Thig_sem = sd(train_thig)/sqrt(length(train_thig)))  
+
+#______________________________________________
+#Calculating correlation among variables and pValues 
+
+train_day_minus_tr_id <- mwm_data[,3:10]
+train_day_minus_tr_id$train_.geno[train_day_minus_tr_id$train_.geno == "A"] <- 1
+train_day_minus_tr_id$train_.geno[train_day_minus_tr_id$train_.geno == "B"] <- 2
+train_day_minus_tr_id$train_.geno <- as.numeric(train_day_minus_tr_id$train_.geno)
+rcorr(as.matrix(train_day_minus_tr_id))
+
+
+#Calculating Analysis of Variance (ANOVA) Table: 2-Way Geno and Day as indep vars 
+train_day_minus_tr_id2 <- mwm_data[,3:10]
+
+anova(lm(train_duration ~ train_.geno*train_day, train_day_minus_tr_id2))
+
+#Response: train_duration
+#                        Df Sum Sq Mean Sq  F value    Pr(>F)    
+#train_.geno              1    710     710   1.9201 0.1660220    
+#train_day                1  40537   40537 109.6397 < 2.2e-16 ***
+#train_.geno:train_day    1   4237    4237  11.4603 0.0007266 ***
+#Residuals             1756 649246     370                       
+#---
+#        Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+anova(lm(train_velocity ~ train_.geno*train_day, train_day_minus_tr_id2))
+#Response: train_velocity
+#                       Df  Sum Sq Mean Sq F value    Pr(>F)    
+#train_.geno              1   538.6  538.57 44.4187 3.539e-11 ***
+#train_day                1    28.5   28.47  2.3479    0.1256    
+#train_.geno:train_day    1    20.0   19.99  1.6489    0.1993    
+#Residuals             1756 21291.1   12.12                      
+---
+
+anova(lm(train_dist_moved ~ train_.geno*train_day, train_day_minus_tr_id2))
+#Response: train_dist_moved
+#                         Df     Sum Sq     Mean Sq    F value        Pr(>F)
+#train_.geno              -1   -1513900  -1513900.2  -9.268177 -2.366333e-03****
+#train_day                -1  -11896646 -11896646.3 -72.831895 -3.004091e-17****
+#train_.geno:train_day    -1   -1930501  -1930500.7 -11.818627 -6.000957e-04****
+#Residuals             -1756 -286831900   -163343.9         NA            NA
+
+
+anova(lm(train_thig ~ train_.geno*train_day, train_day_minus_tr_id2))
+
+#Response: train_thig
+#                       Df Sum Sq Mean Sq  F value    Pr(>F)    
+#train_.geno              1   3230    3230  12.5706 0.0004021 ***
+#train_day                1 125388  125388 487.9602 < 2.2e-16 ***
+#train_.geno:train_day    1   2506    2506   9.7508 0.0018217 ** 
+#Residuals             1754 450715     257                       
+
+#_______________________________________________
+#Change the identitiy of A and B to WT and NL3R451C
+summary_train$train_.geno[summary_train$train_.geno == "A"] <- "WT"
+summary_train$train_.geno[summary_train$train_.geno == "B"] <- "NL3"
+
+#_________________________________________________
+#Make graphs showing all summary stats
+summary_train$train_.geno <- factor(summary_train$train_.geno, levels = c("WT", "NL3R451C"))
+
+g1 <- ggplot(summary_train, aes(x = train_day, y = Dur_mean))+
+        geom_errorbar(aes(ymin = Dur_mean-Dur_sem, ymax = Dur_mean + Dur_sem),  width=.2)+
+        geom_line(aes(linetype=train_.geno))+
+        geom_point()+
+        scale_y_continuous("Duration (sec)", limits = c(10, 50), expand = c(0,0))+
+        scale_x_continuous("Training Day", limits = c(0.5,11.5), expand = c(0,0))+
+        theme(axis.line = element_line(colour = "black"), legend.title = element_blank(), 
+              legend.key = element_rect(colour = "white", fill = NA), panel.background = element_blank(),
+              legend.position = c(0.25,0.85))
+
+        
+g2 <- ggplot(summary_train, aes(x = train_day, y = Vel_mean))+
+        geom_errorbar(aes(ymin = Vel_mean-Vel_sem, ymax = Vel_mean + Vel_sem),  width=.2)+
+        geom_line(aes(linetype=train_.geno))+
+        geom_point()+
+        scale_y_continuous("Velocity (cm/sec)", limits = c(10, 50), expand = c(0,0))+
+        scale_x_continuous("Training Day", limits = c(0.5,11.5), expand = c(0,0))+
+        theme(axis.line = element_line(colour = "black"), legend.title = element_blank(), 
+              legend.key = element_rect(colour = "white", fill = NA), panel.background = element_blank(),
+              legend.position = c(0.25,0.85))
+
+        
+g3 <- ggplot(summary_train, aes(x = train_day, y = Dist_mean))+
+        geom_errorbar(aes(ymin = Dist_mean-Dist_sem, ymax = Dist_mean + Dist_sem),  width=.2)+
+        geom_line(aes(linetype=train_.geno))+
+        geom_point()+
+        scale_y_continuous("Distance Traveled (cm)", limits = c(300, 900), expand = c(0,0))+
+        scale_x_continuous("Training Day", limits = c(0.5,11.5), expand = c(0,0))+
+        theme(axis.line = element_line(colour = "black"), legend.title = element_blank(), 
+              legend.key = element_rect(colour = "white", fill = NA), panel.background = element_blank(),
+              legend.position = c(0.25,0.85))   
+
+g4 <-ggplot(summary_train, aes(x = train_day, y = Thig_mean))+
+        geom_errorbar(aes(ymin = Thig_mean-Thig_sem, ymax = Thig_mean + Thig_sem),  width=.2)+
+        geom_line(aes(linetype=train_.geno))+
+        geom_point()+
+        scale_y_continuous("Thigmotaxis (sec)", limits = c(10, 60), expand = c(0,0))+
+        scale_x_continuous("Training Day", limits = c(0.5,11.5), expand = c(0,0))+
+        theme(axis.line = element_line(colour = "black"), legend.title = element_blank(), 
+              legend.key = element_rect(colour = "white", fill = NA), panel.background = element_blank(),
+              legend.position = c(0.25,0.85))
+
+
+#Print all plots to one sheet
+ggplot2.multiplot(g1,g2,g3,g4, cols=2)
+
+#_______________________________________________________________________________________________________
+#Probe trial analysis
+probe_trial <- read.csv("~/Desktop/R problems/NL3R451C_probe_trial.csv", stringsAsFactors = FALSE)   
+str(probe_trial)
+names(probe_trial)
+
+#Generating %Time in quadrants 
+probe_trial$tot_dur <- probe_trial$far_dur + probe_trial$opp_dur + probe_trial$near_dur + probe_trial$tar_dur
+probe_trial$per_far <- probe_trial$far_dur/probe_trial$tot_dur
+probe_trial$per_near <- probe_trial$near_dur/probe_trial$tot_dur
+probe_trial$per_opp <- probe_trial$opp_dur/probe_trial$tot_dur
+probe_trial$per_tar <- probe_trial$tar_dur/probe_trial$tot_dur
+
+summary_probe <- probe_trial%>%
+                na.omit()%>%
+        group_by(geno)%>%
+        summarise(per_far_mean = mean(per_far), 
+                  per_far_sd = sd(per_far), 
+                  per_far_sem = sd(per_far)/sqrt(length(per_far)),
+                  per_near_mean = mean(per_near), 
+                  per_near_sd = sd(per_near), 
+                  per_near_sem = sd(per_near)/sqrt(length(per_near)),
+                  per_opp_mean = mean(per_opp), 
+                  per_opp_sd = sd(per_opp), 
+                  per_opp_sem = sd(per_opp)/sqrt(length(per_opp)),
+                  per_tar_mean = mean(per_tar), 
+                  per_far_sd = sd(per_tar), 
+                  per_far_sem = sd(per_tar)/sqrt(length(per_tar)))
+
+#Change the genotypes
+summary_probe$geno[summary_probe$geno == "A"] <- "WT"
+summary_probe$geno[summary_probe$geno == "B"] <- "NL3"
+
+#Export Summary probe summary 
+write.csv(summary_probe,file="summary_probe.csv")
+
+#Only keep vars you want
+summary_probe_small <- probe_trial[,c(3,27:30)]
+summary_probe_smallA <- subset(summary_probe_small2, geno=="A")
+summary_probe_smallB <- subset(summary_probe_small2, geno=="B")
+
+#_________________________________________________________________________
+#one-way ANOVA on probe trial per group: A
+anova(lm(value ~ as.factor(variable), data = summary_probe_smallA))
+#Analysis of Variance Table
+
+#Response: value
+#                     Df  Sum Sq  Mean Sq F value    Pr(>F)    
+#as.factor(variable)   3 0.43223 0.144077  27.243 3.184e-14 ***
+#        Residuals           156 0.82501 0.005289                      
+
+#Next do a posthoc test:Bonferroni
+pairwise.t.test(summary_probe_smallA$value, summary_probe_smallA$variable, p.adjust = "bonferroni")
+#Pairwise comparisons using t tests with pooled SD 
+
+#data:  summary_probe_smallA$value and summary_probe_smallA$variable 
+
+#per_far per_near per_opp
+#        per_near 1.2e-05 -        -      
+#        per_opp  0.00075 1.00000  -      
+#        per_tar  0.01514 1.5e-12  4.2e-10
+
+#P value adjustment method: bonferroni
+
+#________________________________________________________________________
+#one-way ANOVA on probe trial per group: B
+anova(lm(value ~ as.factor(variable), data = summary_probe_smallB))
+#Analysis of Variance Table
+
+#Response: value
+#                     Df  Sum Sq  Mean Sq F value   Pr(>F)    
+#as.factor(variable)   3 0.15481 0.051605  8.0584 5.02e-05 ***
+#        Residuals           156 0.99901 0.006404                            
+
+#Next do a posthoc test:Bonferroni
+
+pairwise.t.test(summary_probe_smallB$value, summary_probe_smallB$variable, p.adjust = "bonferroni")
+#Pairwise comparisons using t tests with pooled SD 
+
+#data:  summary_probe_smallB$value and summary_probe_smallB$variable 
+
+#        per_far per_near per_opp
+#        per_near 0.57274 -        -      
+#        per_opp  1.00000 1.00000  -      
+#        per_tar  0.03259 8e-05    0.00066
+
+#P value adjustment method: bonferroni
